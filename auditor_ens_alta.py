@@ -9,32 +9,37 @@ import re
 import time
 
 # ---------------------------------------------------------
-# Script per al TFG de Xavier Fluvia i Junyent
-# Herramienta de soporte para auditoria tecnica ENS (Cat. ALTA)
+# CONFIGURACIÓN (Como en el script básico)
 # ---------------------------------------------------------
+TARGET = input("Introduce IP o dominio a auditar (ej: 10.0.0.10): ")
+if TARGET == "":
+    TARGET = "10.0.0.10"
 
-TARGET = "10.0.0.10"
-PASSWORD = "Adminadmin12!"
+PASSWORD = input("Introduce contrasena a evaluar (ej: Adminadmin12!): ")
+if PASSWORD == "":
+    PASSWORD = "Adminadmin12!"
+
 PUERTOS_AUTORIZADOS = [80, 443]
 
 # ---------------------------------------------------------
 # FUNCIONES DE AYUDA
 # ---------------------------------------------------------
-
 def sacar_fecha():
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    # Saca la fecha en formato UTC
+    ahora = datetime.datetime.utcnow()
+    return ahora.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 def hacer_registro(verif, nivel, medida, dim, desc, evi, cat):
-    diccionario = {
-        "verificacion": verif,
-        "nivel": nivel,
-        "medida_ens": medida,
-        "dimension": dim,
-        "descripcion": desc,
-        "evidencia": str(evi),
-        "categoria": cat,
-        "timestamp_utc": sacar_fecha()
-    }
+    # Crea el diccionario igual que el profesional
+    diccionario = {}
+    diccionario["verificacion"] = verif
+    diccionario["nivel"] = nivel
+    diccionario["medida_ens"] = medida
+    diccionario["dimension"] = dim
+    diccionario["descripcion"] = desc
+    diccionario["evidencia"] = evi # Lo dejamos como variable (puede ser dict)
+    diccionario["categoria"] = cat
+    diccionario["timestamp_utc"] = sacar_fecha()
     return diccionario
 
 def check_port(host, puerto):
@@ -51,6 +56,7 @@ def check_port(host, puerto):
         return False
 
 def pedir_cabeceras(puerto, usar_https):
+    # Hace una peticion HTTP basica
     if usar_https == True:
         url = "https://" + TARGET + ":" + str(puerto) + "/"
         ctx = ssl.create_default_context()
@@ -68,197 +74,264 @@ def pedir_cabeceras(puerto, usar_https):
             resp = urllib.request.urlopen(req, timeout=3)
             
         cabeceras = dict(resp.headers)
-        cabeceras["status"] = resp.status
+        cabeceras["_status"] = resp.status
         return cabeceras
     except urllib.error.HTTPError as e:
         cabeceras = dict(e.headers)
-        cabeceras["status"] = e.code
+        cabeceras["_status"] = e.code
+        cabeceras["_error"] = str(e)
         return cabeceras
     except Exception as e:
-        return {"error": str(e)}
+        cabeceras = {}
+        cabeceras["_error"] = str(e)
+        return cabeceras
 
 # ---------------------------------------------------------
 # CAPA 1 - RED
 # ---------------------------------------------------------
-
 def v01_telnet():
     if check_port(TARGET, 23):
-        return hacer_registro("V01", "FAIL", "mp.com.1", "C", "Puerto 23 Telnet activo", "puerto 23 abierto", "Directa")
+        return hacer_registro("V01", "FAIL", "mp.com.1", "C", "Puerto 23 Telnet activo — protocolo en texto claro prohibido en Cat. ALTA", "puerto 23 abierto", "Directa")
     else:
         return hacer_registro("V01", "OK", "mp.com.1", "C", "Puerto 23 Telnet cerrado", "puerto 23 cerrado", "Directa")
 
 def v02_ftp():
     if check_port(TARGET, 21):
-        return hacer_registro("V02", "FAIL", "mp.com.1", "C", "Puerto 21 FTP activo", "puerto 21 abierto", "Directa")
+        return hacer_registro("V02", "FAIL", "mp.com.1", "C", "Puerto 21 FTP activo — transferencia en texto claro prohibida en Cat. ALTA", "puerto 21 abierto", "Directa")
     else:
         return hacer_registro("V02", "OK", "mp.com.1", "C", "Puerto 21 FTP cerrado", "puerto 21 cerrado", "Directa")
 
 def v03_tftp():
     if check_port(TARGET, 69):
-        return hacer_registro("V03", "FAIL", "mp.com.1", "C", "Puerto 69 TFTP activo", "puerto 69 abierto", "Directa")
+        return hacer_registro("V03", "FAIL", "mp.com.1", "C", "Puerto 69 TFTP activo — protocolo sin autenticacion ni cifrado", "puerto 69 abierto", "Directa")
     else:
         return hacer_registro("V03", "OK", "mp.com.1", "C", "Puerto 69 TFTP cerrado", "puerto 69 cerrado", "Directa")
 
 def v04_ssh():
     if check_port(TARGET, 22):
-        return hacer_registro("V04", "WARN", "op.exp.1", "C", "Puerto 22 SSH expuesto", "puerto 22 abierto", "Directa")
+        return hacer_registro("V04", "WARN", "op.exp.1", "C", "Puerto 22 SSH expuesto — verificar restriccion de acceso (ACL, VPN, MFA)", "puerto 22 accesible desde la red de auditoria", "Directa")
     else:
-        return hacer_registro("V04", "OK", "op.exp.1", "C", "Puerto 22 SSH cerrado", "puerto 22 cerrado", "Directa")
+        return hacer_registro("V04", "OK", "op.exp.1", "C", "Puerto 22 SSH no accesible desde la red de auditoria", "puerto 22 cerrado o filtrado", "Directa")
 
 def v05_rdp():
     if check_port(TARGET, 3389):
-        return hacer_registro("V05", "WARN", "op.exp.1", "C", "Puerto 3389 RDP expuesto", "puerto 3389 abierto", "Directa")
+        return hacer_registro("V05", "WARN", "op.exp.1", "C", "Puerto 3389 RDP expuesto — requiere justificacion, MFA y controles adicionales en Cat. ALTA", "puerto 3389 accesible", "Directa")
     else:
-        return hacer_registro("V05", "OK", "op.exp.1", "C", "Puerto 3389 RDP cerrado", "puerto 3389 cerrado", "Directa")
+        return hacer_registro("V05", "OK", "op.exp.1", "C", "Puerto 3389 RDP no accesible", "puerto 3389 cerrado", "Directa")
 
 def v06_smb():
     if check_port(TARGET, 445):
-        return hacer_registro("V06", "WARN", "op.exp.1", "C", "Puerto 445 SMB expuesto", "puerto 445 abierto", "Directa")
+        return hacer_registro("V06", "WARN", "op.exp.1", "C", "Puerto 445 SMB expuesto — vector de alto riesgo (EternalBlue, WannaCry); requiere aislamiento", "puerto 445 accesible", "Directa")
     else:
-        return hacer_registro("V06", "OK", "op.exp.1", "C", "Puerto 445 SMB cerrado", "puerto 445 cerrado", "Directa")
+        return hacer_registro("V06", "OK", "op.exp.1", "C", "Puerto 445 SMB no accesible", "puerto 445 cerrado", "Directa")
 
 def v07_puertos_autorizados():
-    puertos = [21, 22, 23, 69, 80, 443, 445, 3389]
+    puertos_a_verificar = [21, 22, 23, 69, 80, 443, 445, 3389]
     abiertos = []
     
-    for p in puertos:
+    for p in puertos_a_verificar:
         if check_port(TARGET, p):
             abiertos.append(p)
             
-    malos = []
+    no_autorizados = []
     for p in abiertos:
         if p not in PUERTOS_AUTORIZADOS:
-            malos.append(p)
+            no_autorizados.append(p)
             
     if len(PUERTOS_AUTORIZADOS) == 0:
-        return hacer_registro("V07", "WARN", "op.exp.1", "C", "No hay puertos autorizados configurados", str(abiertos), "Indirecta")
-    elif len(malos) > 0:
-        return hacer_registro("V07", "WARN", "op.exp.1", "C", "Hay puertos que no estan autorizados", str(malos), "Indirecta")
+        evidencia_dict = {"abiertos": abiertos, "autorizados": PUERTOS_AUTORIZADOS}
+        return hacer_registro("V07", "WARN", "op.exp.1", "C", "Lista de puertos autorizados no definida — no es posible verificar el inventario", evidencia_dict, "Indirecta")
+    elif len(no_autorizados) > 0:
+        evidencia_dict = {"abiertos": abiertos, "no_autorizados": no_autorizados, "autorizados": PUERTOS_AUTORIZADOS}
+        return hacer_registro("V07", "WARN", "op.exp.1", "C", "Puertos abiertos no incluidos en la lista de servicios autorizados", evidencia_dict, "Indirecta")
     else:
-        return hacer_registro("V07", "OK", "op.exp.1", "C", "Puertos OK", str(abiertos), "Indirecta")
+        evidencia_dict = {"abiertos": abiertos, "autorizados": PUERTOS_AUTORIZADOS}
+        return hacer_registro("V07", "OK", "op.exp.1", "C", "Todos los puertos abiertos figuran en la lista de servicios autorizados", evidencia_dict, "Indirecta")
 
 # ---------------------------------------------------------
 # CAPA 2 - TRAZABILIDAD
 # ---------------------------------------------------------
-
 def v08_deriva_horaria():
+    from email.utils import parsedate_to_datetime
+    
     cabeceras = pedir_cabeceras(80, False)
-    if "error" in cabeceras:
+    if "_error" in cabeceras:
         cabeceras = pedir_cabeceras(443, True)
         
-    if "Date" in cabeceras or "date" in cabeceras:
+    date_val = ""
+    if "Date" in cabeceras:
+        date_val = cabeceras["Date"]
+    elif "date" in cabeceras:
+        date_val = cabeceras["date"]
+        
+    if date_val != "":
         try:
-            from email.utils import parsedate_to_datetime
-            if "Date" in cabeceras:
-                fecha_server = parsedate_to_datetime(cabeceras["Date"])
-            else:
-                fecha_server = parsedate_to_datetime(cabeceras["date"])
-                
-            ahora = datetime.datetime.now(datetime.timezone.utc)
-            diferencia = abs((ahora - fecha_server).total_seconds())
+            srv_time = parsedate_to_datetime(date_val)
+            now = datetime.datetime.now(datetime.timezone.utc)
+            deriva = abs((now - srv_time).total_seconds())
             
-            if diferencia >= 60:
-                return hacer_registro("V08", "FAIL", "op.mon.1", "T", "Deriva horaria muy grande", str(diferencia) + "s", "Directa")
-            elif diferencia >= 5:
-                return hacer_registro("V08", "WARN", "op.mon.1", "T", "Deriva horaria regular", str(diferencia) + "s", "Directa")
+            evidencia_texto = str(int(deriva)) + " s"
+            
+            if deriva >= 60:
+                return hacer_registro("V08", "FAIL", "op.mon.1", "T", "Deriva horaria elevada — correlacion de eventos comprometida", evidencia_texto, "Directa")
+            elif deriva >= 5:
+                return hacer_registro("V08", "WARN", "op.mon.1", "T", "Deriva horaria moderada — posible problema de sincronizacion NTP", evidencia_texto, "Directa")
             else:
-                return hacer_registro("V08", "OK", "op.mon.1", "T", "Deriva horaria bien", str(diferencia) + "s", "Directa")
+                return hacer_registro("V08", "OK", "op.mon.1", "T", "Sincronizacion temporal correcta — deriva dentro del umbral", evidencia_texto, "Directa")
         except:
             pass
             
-    return hacer_registro("V08", "No evaluable", "op.mon.1", "T", "No puedo sacar la hora", "sin Date", "Directa")
+    return hacer_registro("V08", "No evaluable", "op.mon.1", "T", "No se puede obtener referencia temporal del objetivo", "sin respuesta HTTP/S con cabecera Date", "Directa")
 
 def v09_logging_operativo():
-    return hacer_registro("V09", "No evaluable", "op.log.1", "T", "No se puede mirar sin entrar al server", "-", "No evaluable")
+    return hacer_registro("V09", "No evaluable", "op.log.1", "T", "Logging: requiere acceso al sistema o SIEM — no evaluable en modalidad observacional", "no evaluable sin acceso directo al sistema auditado", "No evaluable")
 
 # ---------------------------------------------------------
 # CAPA 3A - WEB
 # ---------------------------------------------------------
-
 def v10_redireccion_http_https():
     try:
         import http.client
         conn = http.client.HTTPConnection(TARGET, 80, timeout=3)
-        conn.request("GET", "/")
+        conn.request("GET", "/", headers={"User-Agent": "auditor_ens_alta/4.0"})
         resp = conn.getresponse()
         status = resp.status
-        loc = resp.getheader("Location", "")
+        location = resp.getheader("Location", "")
         conn.close()
         
-        if (status == 301 or status == 302 or status == 308) and "https://" in loc:
-            return hacer_registro("V10", "OK", "mp.sw.2", "C", "Redireccion funciona", loc, "Directa")
+        if (status == 301 or status == 302 or status == 303 or status == 307 or status == 308) and location.startswith("https://"):
+            return hacer_registro("V10", "OK", "mp.sw.2", "C", "Redireccion HTTP -> HTTPS correcta (" + str(status) + ")", location, "Directa")
         else:
-            return hacer_registro("V10", "FAIL", "mp.sw.2", "C", "No redirige bien", "status " + str(status), "Directa")
-    except:
-        return hacer_registro("V10", "No evaluable", "mp.sw.2", "C", "Puerto 80 caido", "-", "Directa")
+            if location == "":
+                location = "ausente"
+            return hacer_registro("V10", "FAIL", "mp.sw.2", "C", "No se detecta redireccion HTTP -> HTTPS", "status=" + str(status) + " location=" + location, "Directa")
+    except Exception as exc:
+        return hacer_registro("V10", "No evaluable", "mp.sw.2", "C", "Puerto 80 no accesible — no se puede verificar la redireccion", str(exc), "Directa")
 
 def v11_hsts():
-    cabs = pedir_cabeceras(443, True)
-    if "error" in cabs:
-        return hacer_registro("V11", "No evaluable", "mp.sw.2", "C", "Sin https", "-", "Directa")
+    cab = pedir_cabeceras(443, True)
+    if "_error" in cab and "_status" not in cab:
+        return hacer_registro("V11", "No evaluable", "mp.sw.2", "C", "No se puede conectar por HTTPS para verificar HSTS", cab["_error"], "Directa")
         
-    hsts = cabs.get("Strict-Transport-Security", cabs.get("strict-transport-security", ""))
+    hsts = ""
+    if "Strict-Transport-Security" in cab:
+        hsts = cab["Strict-Transport-Security"]
+    elif "strict-transport-security" in cab:
+        hsts = cab["strict-transport-security"]
+        
     if hsts == "":
-        return hacer_registro("V11", "FAIL", "mp.sw.2", "C", "Falta HSTS", "ausente", "Directa")
+        return hacer_registro("V11", "FAIL", "mp.sw.2", "C", "Cabecera HSTS ausente", "no presente", "Directa")
     
     if "max-age" in hsts:
-        return hacer_registro("V11", "OK", "mp.sw.2", "C", "HSTS OK", hsts, "Directa")
-    else:
-        return hacer_registro("V11", "WARN", "mp.sw.2", "C", "HSTS raro", hsts, "Directa")
+        numero = 0
+        import re
+        m = re.search(r"max-age=(\d+)", hsts)
+        if m:
+            numero = int(m.group(1))
+            
+        if numero >= 31536000:
+            return hacer_registro("V11", "OK", "mp.sw.2", "C", "Cabecera HSTS presente con max-age suficiente (>= 1 anno)", hsts, "Directa")
+        else:
+            return hacer_registro("V11", "WARN", "mp.sw.2", "C", "Cabecera HSTS presente pero max-age insuficiente (< 1 anno)", hsts, "Directa")
+    return hacer_registro("V11", "WARN", "mp.sw.2", "C", "Cabecera HSTS presente pero max-age insuficiente (< 1 anno)", hsts, "Directa")
 
 def v12_x_frame_options():
-    cabs = pedir_cabeceras(443, True)
-    if "error" in cabs:
-        cabs = pedir_cabeceras(80, False)
+    cab = pedir_cabeceras(443, True)
+    if "_error" in cab and "_status" not in cab:
+        cab = pedir_cabeceras(80, False)
         
-    xfo = cabs.get("X-Frame-Options", cabs.get("x-frame-options", ""))
+    xfo = ""
+    if "X-Frame-Options" in cab:
+        xfo = cab["X-Frame-Options"]
+    elif "x-frame-options" in cab:
+        xfo = cab["x-frame-options"]
+        
     if xfo != "":
-        return hacer_registro("V12", "OK", "mp.sw.2", "I", "Tiene X-Frame", xfo, "Directa")
+        return hacer_registro("V12", "OK", "mp.sw.2", "I", "Cabecera X-Frame-Options presente", xfo, "Directa")
     else:
-        return hacer_registro("V12", "FAIL", "mp.sw.2", "I", "No tiene X-Frame", "ausente", "Directa")
+        return hacer_registro("V12", "FAIL", "mp.sw.2", "I", "Cabecera X-Frame-Options ausente — riesgo de clickjacking", "no presente", "Directa")
 
 def v13_x_content_type_options():
-    cabs = pedir_cabeceras(443, True)
-    if "error" in cabs:
-        cabs = pedir_cabeceras(80, False)
+    cab = pedir_cabeceras(443, True)
+    if "_error" in cab and "_status" not in cab:
+        cab = pedir_cabeceras(80, False)
         
-    xcto = cabs.get("X-Content-Type-Options", cabs.get("x-content-type-options", ""))
-    if "nosniff" in xcto.lower():
-        return hacer_registro("V13", "OK", "mp.sw.2", "I", "Tiene nosniff", xcto, "Directa")
+    xcto = ""
+    if "X-Content-Type-Options" in cab:
+        xcto = cab["X-Content-Type-Options"]
+    elif "x-content-type-options" in cab:
+        xcto = cab["x-content-type-options"]
+        
+    if xcto != "":
+        if "nosniff" in xcto.lower():
+            return hacer_registro("V13", "OK", "mp.sw.2", "I", "Cabecera X-Content-Type-Options: nosniff presente", xcto, "Directa")
+        else:
+            return hacer_registro("V13", "WARN", "mp.sw.2", "I", "Cabecera X-Content-Type-Options presente con valor inesperado", xcto, "Directa")
     else:
-        return hacer_registro("V13", "FAIL", "mp.sw.2", "I", "No tiene nosniff", "ausente", "Directa")
+        return hacer_registro("V13", "FAIL", "mp.sw.2", "I", "Cabecera X-Content-Type-Options ausente", "no presente", "Directa")
 
 def v14_content_security_policy():
-    cabs = pedir_cabeceras(443, True)
-    if "error" in cabs:
-        cabs = pedir_cabeceras(80, False)
+    cab = pedir_cabeceras(443, True)
+    if "_error" in cab and "_status" not in cab:
+        cab = pedir_cabeceras(80, False)
         
-    csp = cabs.get("Content-Security-Policy", cabs.get("content-security-policy", ""))
+    csp = ""
+    if "Content-Security-Policy" in cab:
+        csp = cab["Content-Security-Policy"]
+    elif "content-security-policy" in cab:
+        csp = cab["content-security-policy"]
+        
     if csp != "":
-        return hacer_registro("V14", "OK", "mp.sw.2", "I", "Tiene CSP", csp, "Directa")
+        return hacer_registro("V14", "OK", "mp.sw.2", "I", "Cabecera Content-Security-Policy presente", csp[:300], "Directa")
     else:
-        return hacer_registro("V14", "FAIL", "mp.sw.2", "I", "Falta CSP", "ausente", "Directa")
+        return hacer_registro("V14", "FAIL", "mp.sw.2", "I", "Cabecera Content-Security-Policy ausente", "no presente", "Directa")
 
 def v15_cookies_seguras():
-    cabs = pedir_cabeceras(443, True)
-    if "error" in cabs:
-        cabs = pedir_cabeceras(80, False)
+    cab = pedir_cabeceras(443, True)
+    if "_error" in cab and "_status" not in cab:
+        cab = pedir_cabeceras(80, False)
         
-    galletas = cabs.get("Set-Cookie", cabs.get("set-cookie", ""))
-    if galletas == "":
-        return hacer_registro("V15", "No evaluable", "mp.sw.2", "C", "No hay cookies", "-", "Directa")
+    set_cookie = ""
+    if "Set-Cookie" in cab:
+        set_cookie = cab["Set-Cookie"]
+    elif "set-cookie" in cab:
+        set_cookie = cab["set-cookie"]
         
-    malas = []
-    lista_galletas = galletas.split("\n")
-    for galleta in lista_galletas:
-        texto = galleta.lower()
-        if "secure" not in texto or "httponly" not in texto:
-            malas.append(galleta)
+    if set_cookie == "":
+        return hacer_registro("V15", "No evaluable", "mp.sw.2", "C", "El servicio no emite ninguna cookie — no evaluable", "sin cabecera Set-Cookie", "Directa")
+        
+    cookies = []
+    lista_temp = set_cookie.split("\n")
+    for c in lista_temp:
+        if c.strip() != "":
+            cookies.append(c.strip())
             
-    if len(malas) > 0:
-        return hacer_registro("V15", "FAIL", "mp.sw.2", "C", "Cookies sin seguro", str(malas), "Directa")
+    if len(cookies) == 0:
+        cookies.append(set_cookie)
+        
+    deficientes = []
+    for cookie in cookies:
+        cookie_lower = cookie.lower()
+        nombre = cookie.split("=")[0].strip()
+        sin_secure = False
+        sin_httponly = False
+        
+        if "secure" not in cookie_lower:
+            sin_secure = True
+        if "httponly" not in cookie_lower:
+            sin_httponly = True
+            
+        if sin_secure == True or sin_httponly == True:
+            dict_error = {}
+            dict_error["cookie"] = nombre
+            dict_error["sin_secure"] = sin_secure
+            dict_error["sin_httponly"] = sin_httponly
+            deficientes.append(dict_error)
+            
+    if len(deficientes) > 0:
+        return hacer_registro("V15", "FAIL", "mp.sw.2", "C", "Alguna cookie carece de atributo Secure o HttpOnly", deficientes, "Directa")
     else:
-        return hacer_registro("V15", "OK", "mp.sw.2", "C", "Cookies OK", "perfecto", "Directa")
+        return hacer_registro("V15", "OK", "mp.sw.2", "C", "Todas las cookies incluyen los atributos Secure y HttpOnly", str(len(cookies)) + " cookie(s) verificada(s)", "Directa")
 
 def v16_version_tls():
     ctx = ssl.create_default_context()
@@ -272,70 +345,79 @@ def v16_version_tls():
         version = ssock.version()
         ssock.close()
         
-        if version in ["TLSv1", "TLSv1.1", "SSLv2", "SSLv3"]:
-            return hacer_registro("V16", "FAIL", "mp.sw.2", "A", "TLS viejo", version, "Indirecta")
+        protocolos_obsoletos = ["TLSv1", "TLSv1.1", "SSLv2", "SSLv3"]
+        if version in protocolos_obsoletos:
+            return hacer_registro("V16", "FAIL", "mp.sw.2", "A", "Version TLS obsoleta negociada: " + version, version, "Indirecta")
         else:
-            return hacer_registro("V16", "OK", "mp.sw.2", "A", "TLS bueno", version, "Indirecta")
+            return hacer_registro("V16", "OK", "mp.sw.2", "A", "Version TLS aceptable negociada: " + version, version, "Indirecta")
     except Exception as e:
-        return hacer_registro("V16", "No evaluable", "mp.sw.2", "A", "Fallo TLS", str(e), "Indirecta")
+        return hacer_registro("V16", "No evaluable", "mp.sw.2", "A", "No se puede establecer conexion TLS con el objetivo", str(e), "Indirecta")
 
 # ---------------------------------------------------------
 # CAPA 3B - AUTENTICACION
 # ---------------------------------------------------------
-
 def v17_longitud_contrasena():
-    if len(PASSWORD) >= 12:
-        return hacer_registro("V17", "OK", "op.acc.1", "A", "Longitud buena", str(len(PASSWORD)), "Indirecta")
+    longitud = len(PASSWORD)
+    if longitud >= 12:
+        return hacer_registro("V17", "OK", "op.acc.1", "A", "Longitud de contrasena suficiente (" + str(longitud) + " caracteres)", str(longitud) + " caracteres", "Indirecta")
     else:
-        return hacer_registro("V17", "FAIL", "op.acc.1", "A", "Longitud mala", str(len(PASSWORD)), "Indirecta")
+        return hacer_registro("V17", "FAIL", "op.acc.1", "A", "Longitud de contrasena insuficiente (" + str(longitud) + " < 12 caracteres)", str(longitud) + " caracteres", "Indirecta")
 
 def v18_complejidad_contrasena():
-    mayus = False
-    minus = False
-    num = False
+    tiene_may = False
+    tiene_min = False
+    tiene_dig = False
+    
     for letra in PASSWORD:
-        if letra.isupper(): mayus = True
-        if letra.islower(): minus = True
-        if letra.isdigit(): num = True
+        if letra.isupper(): tiene_may = True
+        if letra.islower(): tiene_min = True
+        if letra.isdigit(): tiene_dig = True
         
-    if mayus and minus and num:
-        return hacer_registro("V18", "OK", "op.acc.1", "A", "Tiene todo", "complejidad ok", "Indirecta")
+    detalle = {}
+    detalle["mayusculas"] = tiene_may
+    detalle["minusculas"] = tiene_min
+    detalle["digitos"] = tiene_dig
+    
+    if tiene_may and tiene_min and tiene_dig:
+        return hacer_registro("V18", "OK", "op.acc.1", "A", "Contrasena contiene mayusculas, minusculas y digitos", detalle, "Indirecta")
     else:
-        return hacer_registro("V18", "FAIL", "op.acc.1", "A", "Falta mayus, minus o numero", "-", "Indirecta")
+        return hacer_registro("V18", "FAIL", "op.acc.1", "A", "Contrasena carece de mayusculas, minusculas o digitos", detalle, "Indirecta")
 
 def v19_simbolo_especial():
-    raro = False
+    tiene_especial = False
     for letra in PASSWORD:
         if not letra.isalnum():
-            raro = True
+            tiene_especial = True
             
-    if raro:
-        return hacer_registro("V19", "OK", "op.acc.1", "A", "Tiene simbolos", "ok", "Indirecta")
+    if tiene_especial:
+        return hacer_registro("V19", "OK", "op.acc.1", "A", "Contrasena contiene al menos un simbolo especial", "simbolo especial presente", "Indirecta")
     else:
-        return hacer_registro("V19", "FAIL", "op.acc.1", "A", "No tiene simbolos", "mal", "Indirecta")
+        return hacer_registro("V19", "FAIL", "op.acc.1", "A", "Contrasena sin simbolos especiales — solo caracteres alfanumericos", "sin simbolo especial", "Indirecta")
 
 def v20_credencial_trivial():
-    basicas = ["admin", "admin123", "password", "123456", "qwerty", "admin123!", "root", "test"]
-    if PASSWORD.lower() in basicas:
-        return hacer_registro("V20", "FAIL", "op.acc.1", "A", "Contrasena muy facil", "trivial", "Indirecta")
+    triviales = ["admin", "admin123", "password", "123456", "qwerty", "admin123!", "password1", "123456789", "12345678", "12345", "1234567890", "letmein", "welcome", "monkey", "dragon", "master", "login", "root", "toor", "test", "guest", "changeme"]
+    pwd_lower = PASSWORD.lower()
+    
+    if pwd_lower in triviales:
+        return hacer_registro("V20", "FAIL", "op.acc.1", "A", "Contrasena representativa figura en la lista de credenciales triviales", "coincidencia en lista de triviales", "Indirecta")
     else:
-        return hacer_registro("V20", "OK", "op.acc.1", "A", "Contrasena no es facil", "ok", "Indirecta")
+        return hacer_registro("V20", "OK", "op.acc.1", "A", "Contrasena no encontrada en la lista de credenciales triviales", "sin coincidencia", "Indirecta")
 
 # ---------------------------------------------------------
 # CÓDIGO PRINCIPAL
 # ---------------------------------------------------------
-
 def main():
+    inicio_tiempo = datetime.datetime.now(datetime.timezone.utc)
+    
     print("=" * 72)
     print("  auditor_ens_alta v4.0  —  ENS Categoria ALTA (RD 311/2022)")
     print("=" * 72)
     print("  TARGET  : " + TARGET)
-    print("  Inicio  : " + sacar_fecha())
+    print("  Inicio  : " + inicio_tiempo.strftime("%Y-%m-%dT%H:%M:%S+00:00"))
     print("-" * 72)
 
-    inicio_tiempo = datetime.datetime.now(datetime.timezone.utc)
-    
-    lista = [
+    # Funciones manuales guardadas en una lista
+    lista_verificaciones = [
         v01_telnet, v02_ftp, v03_tftp, v04_ssh, v05_rdp, v06_smb, v07_puertos_autorizados,
         v08_deriva_horaria, v09_logging_operativo, v10_redireccion_http_https,
         v11_hsts, v12_x_frame_options, v13_x_content_type_options, v14_content_security_policy,
@@ -343,29 +425,29 @@ def main():
         v19_simbolo_especial, v20_credencial_trivial
     ]
     
-    nombres = [
-        "V01_TELNET", "V02_FTP", "V03_TFTP", "V04_SSH", "V05_RDP", "V06_SMB", "V07_PUERTOS_AUTORIZADOS",
-        "V08_DERIVA_HORARIA", "V09_LOGGING_OPERATIVO", "V10_REDIRECCION_HTTP_HTTPS",
-        "V11_HSTS", "V12_X_FRAME_OPTIONS", "V13_X_CONTENT_TYPE_OPTIONS", "V14_CONTENT_SECURITY_POLICY",
-        "V15_COOKIES_SEGURAS", "V16_VERSION_TLS", "V17_LONGITUD_CONTRASENA", "V18_COMPLEJIDAD_CONTRASENA",
-        "V19_SIMBOLO_ESPECIAL", "V20_CREDENCIAL_TRIVIAL"
+    nombres_verificaciones = [
+        "v01_telnet", "v02_ftp", "v03_tftp", "v04_ssh", "v05_rdp", "v06_smb", "v07_puertos_autorizados",
+        "v08_deriva_horaria", "v09_logging_operativo", "v10_redireccion_http_https",
+        "v11_hsts", "v12_x_frame_options", "v13_x_content_type_options", "v14_content_security_policy",
+        "v15_cookies_seguras", "v16_version_tls", "v17_longitud_contrasena", "v18_complejidad_contrasena",
+        "v19_simbolo_especial", "v20_credencial_trivial"
     ]
 
     resultados = []
     
-    for i in range(len(lista)):
+    for i in range(len(lista_verificaciones)):
         num = i + 1
+        num_str = str(num)
         if num < 10:
-            num_str = "0" + str(num)
-        else:
-            num_str = str(num)
+            num_str = "0" + num_str
             
-        print("  [" + num_str + "/20] " + nombres[i] + " ...", end=" ", flush=True)
+        nombre = nombres_verificaciones[i].upper()
+        print("  [" + num_str + "/20] " + nombre + " ...", end=" ", flush=True)
         
         try:
-            res = lista[i]()
+            res = lista_verificaciones[i]()
         except Exception as e:
-            res = hacer_registro(nombres[i][:3], "No evaluable", "-", "-", "Fallo general", str(e), "-")
+            res = hacer_registro(nombre[:3], "No evaluable", "-", "-", "Error inesperado en " + nombre.lower(), str(e), "-")
             
         resultados.append(res)
         print(res["nivel"])
@@ -373,9 +455,10 @@ def main():
     fin_tiempo = datetime.datetime.now(datetime.timezone.utc)
     duracion = (fin_tiempo - inicio_tiempo).total_seconds()
     
-    # Contar para el resumen
+    # Contar resultados
     resumen_dic = {"OK": 0, "WARN": 0, "FAIL": 0, "No evaluable": 0}
     for r in resultados:
+        niv = ""
         if "nivel" in r:
             niv = r["nivel"]
         else:
@@ -390,51 +473,56 @@ def main():
     ruta_json = "auditoria_" + ts + ".json"
     ruta_csv  = "auditoria_" + ts + ".csv"
 
-    # Guardar Json
-    contexto = {
-        "herramienta":  "auditor_ens_alta v4.0",
-        "target":       TARGET,
-        "inicio_utc":   inicio_tiempo.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-        "fin_utc":      fin_tiempo.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-        "duracion_s":   round(duracion, 2),
-        "total_checks": len(resultados),
-        "resumen":      resumen_dic
-    }
+    # Guardar Json igual que el original
+    contexto = {}
+    contexto["herramienta"] = "auditor_ens_alta v4.0"
+    contexto["target"] = TARGET
+    contexto["inicio_utc"] = inicio_tiempo.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    contexto["fin_utc"] = fin_tiempo.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    contexto["duracion_s"] = round(duracion, 2)
+    contexto["total_checks"] = len(resultados)
+    contexto["resumen"] = resumen_dic
     
-    dic_final = {"contexto": contexto, "resultados": resultados}
-    with open(ruta_json, "w", encoding="utf-8") as f:
-        json.dump(dic_final, f, ensure_ascii=False, indent=2)
+    dic_final = {}
+    dic_final["contexto"] = contexto
+    dic_final["resultados"] = resultados
+    
+    f = open(ruta_json, "w", encoding="utf-8")
+    json.dump(dic_final, f, ensure_ascii=False, indent=2)
+    f.close()
 
-    # Guardar CSV (basico)
+    # Guardar CSV exactamente con las mismas columnas
     cabeceras_csv = ["verificacion", "nivel", "medida_ens", "dimension", "descripcion", "evidencia", "categoria", "timestamp_utc"]
-    with open(ruta_csv, "w", newline="", encoding="utf-8") as f:
-        escritor = csv.writer(f)
-        escritor.writerow(cabeceras_csv)
-        for r in resultados:
-            # Pasar dict/list de evidencia a string para que no explote
-            evi = r["evidencia"]
-            if type(evi) is dict or type(evi) is list:
-                evi = json.dumps(evi, ensure_ascii=False)
-                
-            fila = [
-                r.get("verificacion", ""),
-                r.get("nivel", ""),
-                r.get("medida_ens", ""),
-                r.get("dimension", ""),
-                r.get("descripcion", ""),
-                evi,
-                r.get("categoria", ""),
-                r.get("timestamp_utc", "")
-            ]
-            escritor.writerow(fila)
+    f_csv = open(ruta_csv, "w", newline="", encoding="utf-8")
+    escritor = csv.writer(f_csv)
+    escritor.writerow(cabeceras_csv)
+    
+    for r in resultados:
+        evi = r["evidencia"]
+        # Convertir diccionarios a string de json para que el CSV no pete
+        if type(evi) is dict or type(evi) is list:
+            evi = json.dumps(evi, ensure_ascii=False)
+            
+        fila = [
+            r.get("verificacion", ""),
+            r.get("nivel", ""),
+            r.get("medida_ens", ""),
+            r.get("dimension", ""),
+            r.get("descripcion", ""),
+            evi,
+            r.get("categoria", ""),
+            r.get("timestamp_utc", "")
+        ]
+        escritor.writerow(fila)
+    f_csv.close()
 
     print("-" * 72)
     print("  RESUMEN  OK:" + str(resumen_dic["OK"]) + "  WARN:" + str(resumen_dic["WARN"]) + "  FAIL:" + str(resumen_dic["FAIL"]) + "  No evaluable:" + str(resumen_dic["No evaluable"]))
-    print("  Duracion : " + str(round(duracion, 1)) + "s")
+    duracion_redondeada = round(duracion, 1)
+    print("  Duracion : " + str(duracion_redondeada) + "s")
     print("  JSON     : " + ruta_json)
     print("  CSV      : " + ruta_csv)
     print("=" * 72)
 
 if __name__ == "__main__":
     main()
-print("\nFin de la auditoría.\n")
