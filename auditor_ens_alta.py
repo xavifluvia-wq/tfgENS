@@ -395,7 +395,7 @@ def v19_simbolo_especial():
         return hacer_registro("V19", "FAIL", "op.acc.1", "A", "Contrasena sin simbolos especiales — solo caracteres alfanumericos", "sin simbolo especial", "Indirecta")
 
 def v20_credencial_trivial():
-    triviales = ["admin", "admin123", "password", "123456", "qwerty", "admin123!", "password1", "123456789", "12345678", "12345", "1234567890", "letmein", "welcome", "monkey", "dragon", "master", "login", "root", "toor", "test", "guest", "changeme"]
+    triviales = ["admin", "admin123", "password", "123456", "qwerty", "admin123!", "password1", "123456789", "12345678", "12345", "1234567890", "letmein", "welcome", "monkey", "dragon", "master", "login", "root", "toor", "test", "guest", "changeme", "adminadmin12!"]
     pwd_lower = PASSWORD.lower()
     
     if pwd_lower in triviales:
