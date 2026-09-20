@@ -9,7 +9,7 @@ import re
 import time
 
 # ---------------------------------------------------------
-# CONFIGURACIÓN (Como en el script básico)
+# CONFIGURACIÓN
 # ---------------------------------------------------------
 TARGET = input("Introduce IP o dominio a auditar (ej: 10.0.0.10): ")
 if TARGET == "":
