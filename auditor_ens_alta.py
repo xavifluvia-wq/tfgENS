@@ -26,7 +26,7 @@ PUERTOS_AUTORIZADOS = [80, 443]
 # ---------------------------------------------------------
 def sacar_fecha():
     # Saca la fecha en formato UTC
-    ahora = datetime.datetime.utcnow()
+    ahora = datetime.datetime.now(datetime.timezone.utc)
     return ahora.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 def hacer_registro(verif, nivel, medida, dim, desc, evi, cat):
